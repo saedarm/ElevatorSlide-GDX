@@ -1,0 +1,70 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.saedarm.elevators'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.saedarm.elevators'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1'
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['../assets']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+configurations { natives }
+
+dependencies {
+    implementation project(':core')
+    implementation "com.badlogicgames.gdx:gdx-backend-android:$gdxVersion"
+
+    // S23 is arm64-v8a; x86_64 is only for the Android Studio emulator.
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-arm64-v8a"
+    natives "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-x86_64"
+}
+
+// Unpack the libGDX .so files into libs/<abi> before the APK is packaged.
+tasks.register('copyAndroidNatives') {
+    doFirst {
+        configurations.natives.copy().files.each { jar ->
+            def abi = jar.name.endsWith('natives-arm64-v8a.jar') ? 'arm64-v8a' :
+                      jar.name.endsWith('natives-x86_64.jar') ? 'x86_64' : null
+            if (abi != null) {
+                def outputDir = file("libs/$abi")
+                outputDir.mkdirs()
+                copy {
+                    from zipTree(jar)
+                    into outputDir
+                    include '*.so'
+                }
+            }
+        }
+    }
+}
+
+tasks.matching { it.name.contains('merge') && it.name.contains('JniLibFolders') }.configureEach {
+    dependsOn 'copyAndroidNatives'
+}
