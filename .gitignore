@@ -6,3 +6,8 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+# Release signing: keep these off GitHub
+keystore.properties
+*.jks
+*.keystore

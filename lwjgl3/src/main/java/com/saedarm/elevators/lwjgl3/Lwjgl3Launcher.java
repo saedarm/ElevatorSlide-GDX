@@ -12,7 +12,11 @@ public class Lwjgl3Launcher {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Elevators & Laundry Chutes");
         // Roughly the S23's 9:19.5 portrait shape, scaled to fit a laptop screen.
-        config.setWindowedMode(450, 975);
+        // Store screenshots at full phone resolution: -Dwindow=1080x1920 -Dscale=2.4
+        String win = System.getProperty("window", "450x975");
+        String[] wh = win.split("x");
+        config.setWindowedMode(Integer.parseInt(wh[0]), Integer.parseInt(wh[1]));
+        if (System.getProperty("scale") != null) ElevatorsGame.uiScale = Float.parseFloat(System.getProperty("scale"));
         config.useVsync(true);
         config.setForegroundFPS(60);
         config.setBackBufferConfig(8, 8, 8, 8, 16, 0, 4);

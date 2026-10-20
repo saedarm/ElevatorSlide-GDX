@@ -17,6 +17,8 @@ import com.badlogic.gdx.math.MathUtils;
 public class ElevatorsGame extends ApplicationAdapter {
     /** Desktop testing only: card names dealt to the first tenant at the start of every game. */
     public static String[] testHand;
+    /** Desktop testing only: force the UI scale (the phone uses its real screen density). */
+    public static float uiScale;
 
     private Ui ui;
     private Tower tower;

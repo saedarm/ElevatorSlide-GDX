@@ -10,8 +10,8 @@ android {
         applicationId 'com.saedarm.elevators'
         minSdk 26
         targetSdk 36
-        versionCode 3
-        versionName '0.3'
+        versionCode 4
+        versionName '1.0'
     }
 
     sourceSets {
@@ -26,9 +26,27 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    // Release signing reads keystore.properties in the project root (never committed).
+    // Without it, release builds come out unsigned and Play will refuse them.
+    def keystoreFile = rootProject.file('keystore.properties')
+    def keystore = new Properties()
+    if (keystoreFile.exists()) keystoreFile.withInputStream { keystore.load(it) }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
         }
     }
 }

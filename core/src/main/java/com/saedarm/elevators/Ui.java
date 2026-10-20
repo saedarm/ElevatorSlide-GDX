@@ -43,7 +43,7 @@ public final class Ui implements Disposable {
     private final Array<BitmapFont> fonts = new Array<>();
 
     public Ui() {
-        scale = Math.max(1f, Gdx.graphics.getDensity());
+        scale = ElevatorsGame.uiScale > 0 ? ElevatorsGame.uiScale : Math.max(1f, Gdx.graphics.getDensity());
         FreeTypeFontGenerator display = new FreeTypeFontGenerator(Gdx.files.internal("fonts/Bungee-Regular.ttf"));
         FreeTypeFontGenerator text = new FreeTypeFontGenerator(Gdx.files.internal("fonts/BricolageGrotesque.ttf"));
         logo = font(display, 40, false);
