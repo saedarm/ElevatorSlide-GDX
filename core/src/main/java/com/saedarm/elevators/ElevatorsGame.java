@@ -15,6 +15,9 @@ import com.badlogic.gdx.input.GestureDetector;
 import com.badlogic.gdx.math.MathUtils;
 
 public class ElevatorsGame extends ApplicationAdapter {
+    /** Desktop testing only: card names dealt to the first tenant at the start of every game. */
+    public static String[] testHand;
+
     private Ui ui;
     private Tower tower;
     private Match match;
@@ -23,14 +26,20 @@ public class ElevatorsGame extends ApplicationAdapter {
     private OrbitCamera orbit;
     private ModelBatch batch;
     private Environment env;
+    private Fx fx;
+    private Settings settings;
+    private Audio audio;
     private boolean wasSetup = true, introZoom;
 
     @Override
     public void create() {
         ui = new Ui();
+        settings = new Settings();
+        audio = new Audio(settings);
         tower = new Tower(ui.label3d, Ui.PLAYERS);
-        match = new Match(tower);
-        hud = new Hud(ui, match, tower);
+        fx = new Fx();
+        match = new Match(tower, fx, audio);
+        hud = new Hud(ui, match, audio, settings);
         match.setListener(hud);
 
         cam = new PerspectiveCamera(45, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -51,8 +60,7 @@ public class ElevatorsGame extends ApplicationAdapter {
         InputAdapter keys = new InputAdapter() {
             @Override public boolean keyDown(int key) {
                 if (key == Input.Keys.BACK || key == Input.Keys.ESCAPE) {
-                    if (hud.inSetup()) Gdx.app.exit();
-                    else showSetup();
+                    if (!hud.handleBack()) Gdx.app.exit();
                     return true;
                 }
                 if (key == Input.Keys.NUM_1) { match.takeTurn(Board.Pace.STAIRS); return true; }
@@ -66,11 +74,6 @@ public class ElevatorsGame extends ApplicationAdapter {
             }
         };
         Gdx.input.setInputProcessor(new InputMultiplexer(hud.stage, keys, new GestureDetector(orbit)));
-    }
-
-    private void showSetup() {
-        hud.showSetup();
-        orbit.dist = 36;
     }
 
     @Override
@@ -89,9 +92,11 @@ public class ElevatorsGame extends ApplicationAdapter {
     public void render() {
         float dt = Math.min(Gdx.graphics.getDeltaTime(), 1 / 20f);
         match.update(dt);
+        fx.update(dt);
 
         Player p = match.current();
-        boolean setup = hud.inSetup();
+        boolean setup = hud.inMenus();
+        if (setup && !wasSetup) orbit.dist = 36;
         if (wasSetup && !setup) introZoom = true;
         wasSetup = setup;
         if (setup || p == null) {
@@ -103,27 +108,37 @@ public class ElevatorsGame extends ApplicationAdapter {
                 orbit.dist += (24 - orbit.dist) * Math.min(1, dt * 2);
                 if (orbit.idle() < .05f || Math.abs(orbit.dist - 24) < .3f) introZoom = false;
             }
-            orbit.follow(Math.max(1.5f, p.pos.y + .6f), dt);
-            if (orbit.idle() > 2.5f) orbit.faceAngle(MathUtils.atan2(p.pos.z, p.pos.x), dt);
+            com.badlogic.gdx.math.Vector3 f = match.focus();
+            com.badlogic.gdx.math.Vector3 look = f != null ? f : p.pos;
+            orbit.follow(Math.max(1.5f, look.y + .6f), dt);
+            if (settings.followAction && (f != null || orbit.idle() > 2.5f)) orbit.faceAngle(MathUtils.atan2(look.z, look.x), dt);
         }
         orbit.update(dt);
+        if (fx.shake > 0) {
+            float s = fx.shake * fx.shake * .5f;
+            cam.position.add(MathUtils.random(-s, s), MathUtils.random(-s, s), MathUtils.random(-s, s));
+            cam.update();
+        }
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
         Gdx.gl.glClearColor(Ui.SKY.r, Ui.SKY.g, Ui.SKY.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         batch.begin(cam);
-        batch.render(tower.instances, env);
+        tower.render(batch, env);
         for (int i = 0; i < match.players.size; i++) batch.render(match.players.get(i).token, env);
+        fx.render(batch, env);
         batch.end();
 
-        hud.render(dt);
+        hud.render(dt, cam);
     }
 
     @Override
     public void dispose() {
         batch.dispose();
-        hud.stage.dispose();
+        hud.dispose();
+        audio.dispose();
         tower.dispose();
+        fx.dispose();
         ui.dispose();
     }
 }

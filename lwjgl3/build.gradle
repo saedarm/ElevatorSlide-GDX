@@ -21,6 +21,7 @@ dependencies {
 
 tasks.named('run') {
     workingDir = rootProject.file('assets')
+    if (System.getProperty('cards') != null) systemProperty 'cards', System.getProperty('cards')
     if (System.getProperty('os.name').toLowerCase().contains('mac')) {
         jvmArgs '-XstartOnFirstThread'
     }

@@ -9,7 +9,9 @@ import com.badlogic.gdx.graphics.VertexAttributes.Usage;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.Material;
+import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute;
@@ -50,9 +52,16 @@ public final class Tower implements Disposable {
     private final Array<Model> models = new Array<>();
     private final Model[] tokenModels;
     private final Elevator[] elevatorAt = new Elevator[Board.ROOF + 1];
-    private final int[] chuteAt = new int[Board.ROOF + 1];
     private Texture labelTexture;
     private final ModelBuilder mb = new ModelBuilder();
+
+    /** One instance per square (0 is the lobby) so a Cherry Bomb can blow a single tile out. */
+    public final ModelInstance[] tiles = new ModelInstance[Board.ROOF + 1], labels = new ModelInstance[Board.ROOF + 1];
+    private final boolean[] tileHidden = new boolean[Board.ROOF + 1];
+    private ModelInstance core, shafts;
+    private static final Color WINDOW = Color.valueOf("ffcf86"), WINDOW_GLOW = Color.valueOf("b98a48"),
+            GLASS = Color.valueOf("8fe0d4"), GLASS_EXPRESS = Color.valueOf("ffd36b"), GLASS_DEAD = Color.valueOf("4a4a58"),
+            BRASS = Color.valueOf("e4ab4c"), BRASS_GLOW = Color.valueOf("3a2606"), BRASS_DEAD = Color.valueOf("6b5a3a");
 
     public static final class Elevator {
         public final float bx, bz, y0, y1, deg;
@@ -71,7 +80,6 @@ public final class Tower implements Disposable {
     public static float yOf(int i) { return (i - 1) * STEP; }
 
     public Tower(BitmapFont labelFont, Color[] playerColors) {
-        java.util.Arrays.fill(chuteAt, -1);
         buildGround();
         buildSkyline();
         buildCore();
@@ -97,7 +105,6 @@ public final class Tower implements Disposable {
 
     public Elevator elevator(int sq) { return elevatorAt[sq]; }
 
-    public int chuteIndex(int sq) { return chuteAt[sq]; }
 
     public ModelInstance newToken(int colorIndex) { return new ModelInstance(tokenModels[colorIndex]); }
 
@@ -121,6 +128,73 @@ public final class Tower implements Disposable {
     public static float chuteSeconds(int ci) {
         float floors = (Board.CHUTES[ci][0] - Board.CHUTES[ci][1]) / 10f;
         return Math.min(3f, 1.1f + floors * .5f);
+    }
+
+    // ---------- live changes from cards and events ----------
+
+    public void render(ModelBatch batch, Environment env) {
+        batch.render(instances, env);
+        for (int i = 0; i <= Board.ROOF; i++) {
+            if (tileHidden[i]) continue;
+            batch.render(tiles[i], env);
+            batch.render(labels[i], env);
+        }
+    }
+
+    public void hideTile(int sq, boolean hidden) {
+        tileHidden[sq] = hidden;
+        if (!hidden) { tiles[sq].transform.idt(); labels[sq].transform.idt(); }
+    }
+
+    /** Spins a tile (and its number) away from its spot; t runs 0 to 1. */
+    public void flyTile(int sq, float t) {
+        Vector3 c = tilePos(sq, new Vector3());
+        float a = angleOf(sq);
+        float out = t * 5f, up = t * 6f - t * t * 9f;
+        Matrix4 m = tiles[sq].transform;
+        m.idt().translate(c.x + MathUtils.cos(a) * out, c.y + up, c.z + MathUtils.sin(a) * out)
+                .rotate(MathUtils.sin(a), .4f, -MathUtils.cos(a), t * 540f).scale(1 - t * .6f, 1 - t * .6f, 1 - t * .6f)
+                .translate(-c.x, -c.y, -c.z);
+        labels[sq].transform.set(m);
+    }
+
+    private boolean power = true, express, cableBroken;
+
+    public void setPower(boolean on) { power = on; refreshLights(); }
+
+    public void setExpress(boolean on) { express = on; refreshLights(); }
+
+    public void setCableBroken(boolean broken) { cableBroken = broken; refreshLights(); }
+
+    private void refreshLights() {
+        Material w = core.getMaterial("coreWindows");
+        ((ColorAttribute) w.get(ColorAttribute.Diffuse)).color.set(power ? WINDOW : Color.valueOf("2a2840"));
+        ((ColorAttribute) w.get(ColorAttribute.Emissive)).color.set(power ? WINDOW_GLOW : Color.BLACK);
+        boolean dead = !power || cableBroken;
+        Material g = shafts.getMaterial("glass");
+        ((ColorAttribute) g.get(ColorAttribute.Diffuse)).color.set(dead ? GLASS_DEAD : express ? GLASS_EXPRESS : GLASS);
+        ((BlendingAttribute) g.get(BlendingAttribute.Type)).opacity = dead ? .1f : express ? .34f : .16f;
+        setBrass(shafts.getMaterial("brass"), dead);
+        for (Elevator e : elevatorAt) if (e != null) setBrass(e.car.getMaterial("brass"), dead);
+    }
+
+    private static void setBrass(Material m, boolean dead) {
+        ((ColorAttribute) m.get(ColorAttribute.Diffuse)).color.set(dead ? BRASS_DEAD : BRASS);
+        ((ColorAttribute) m.get(ColorAttribute.Emissive)).color.set(dead ? Color.BLACK : BRASS_GLOW);
+    }
+
+    /** Top of an elevator shaft, for sparks when the cable snaps. */
+    public static Vector3 shaftTop(int[] elevator, Vector3 out) {
+        float a = ang(elevator[0]);
+        return out.set(MathUtils.cos(a) * RSHAFT, yOf(elevator[1]) + 1.2f, MathUtils.sin(a) * RSHAFT);
+    }
+
+    /** A random spot on a floor's ramp, for fire and drips. */
+    public static Vector3 randomOnFloor(int floor, Vector3 out) {
+        int sq = (floor - 1) * 10 + 1 + MathUtils.random(9);
+        float a = ang(sq) + MathUtils.random(-HALF, HALF);
+        float r = MathUtils.random(RIN + .3f, ROUT - .2f);
+        return out.set(MathUtils.cos(a) * r, yOf(sq) + .05f, MathUtils.sin(a) * r);
     }
 
     // ---------- geometry helpers ----------
@@ -167,7 +241,12 @@ public final class Tower implements Disposable {
         return mb.part(id, GL20.GL_TRIANGLES, PN, m);
     }
 
-    private void add(Model m) { models.add(m); instances.add(new ModelInstance(m)); }
+    private ModelInstance add(Model m) {
+        models.add(m);
+        ModelInstance i = new ModelInstance(m);
+        instances.add(i);
+        return i;
+    }
 
     // ---------- scene pieces ----------
 
@@ -239,8 +318,7 @@ public final class Tower implements Disposable {
             CylinderShapeBuilder.build(partAt("leg" + k, MathUtils.cos(a), roofY + .9f, MathUtils.sin(a), legs), .16f, 1.6f, .16f, 6);
         }
         // lit windows on the core
-        Material lit = new Material(ColorAttribute.createDiffuse(Color.valueOf("ffcf86")),
-                ColorAttribute.createEmissive(Color.valueOf("b98a48")));
+        Material lit = new Material("coreWindows", ColorAttribute.createDiffuse(WINDOW), ColorAttribute.createEmissive(WINDOW_GLOW));
         mb.node();
         MeshPartBuilder wb = mb.part("coreWindows", GL20.GL_TRIANGLES, PN, lit);
         RandomXS128 rnd = new RandomXS128(1958);
@@ -253,7 +331,7 @@ public final class Tower implements Disposable {
                 quad(wb, polar(r, a, y), polar(r, a2, y), polar(r, a2, y + .55f), polar(r, a, y + .55f), nrm);
             }
         }
-        add(mb.end());
+        core = add(mb.end());
     }
 
     private static Color tileColor(int i) {
@@ -261,23 +339,39 @@ public final class Tower implements Disposable {
         switch (Board.kindAt(i)) {
             case ELEVATOR: return Color.valueOf("f0c46e");
             case CHUTE: return Color.valueOf("f19385");
-            default: return Color.valueOf(Board.floorOf(i) % 2 == 1 ? "e8dcc4" : "cdbfa6");
+            default:
+                if (Board.isMailbox(i)) return Color.valueOf("bfe3dc");
+                return Color.valueOf(Board.floorOf(i) % 2 == 1 ? "e8dcc4" : "cdbfa6");
         }
     }
 
     private void buildTiles() {
         mb.begin();
-        mb.node();
-        MeshPartBuilder b = mb.part("tiles", GL20.GL_TRIANGLES, PNC, new Material(ColorAttribute.createDiffuse(Color.WHITE)));
-        for (int i = 1; i <= Board.ROOF; i++) {
+        Material m = new Material(ColorAttribute.createDiffuse(Color.WHITE));
+        Color post = Color.valueOf("2d2f45"), box = Color.valueOf("5c7fd6");
+        for (int i = 0; i <= Board.ROOF; i++) {
+            Node n = mb.node();
+            n.id = "t" + i;
+            MeshPartBuilder b = mb.part("t" + i, GL20.GL_TRIANGLES, PNC, m);
+            if (i == 0) {
+                wedge(b, RIN - .02f, ROUT + 1.2f, LOBBY_ANGLE - HALF * 1.3f, LOBBY_ANGLE + HALF * 1.3f, yOf(0), THICK, Color.valueOf("5a6aa8"));
+                continue;
+            }
             float a = ang(i);
             wedge(b, RIN - .02f, ROUT, a - HALF + .025f, a + HALF - .025f, yOf(i), THICK, tileColor(i));
-            b.setColor(Color.valueOf("2d2f45"));
+            b.setColor(post);
             Vector3 p = polar(ROUT - .1f, a - HALF + .04f, yOf(i) + .25f);
             BoxShapeBuilder.build(b, p.x, p.y, p.z, .07f, .5f, .07f);
+            if (Board.isMailbox(i)) {
+                Vector3 q = polar(ROUT - .35f, a + HALF * .6f, yOf(i));
+                BoxShapeBuilder.build(b, q.x, q.y + .2f, q.z, .06f, .4f, .06f);
+                b.setColor(box);
+                BoxShapeBuilder.build(b, q.x, q.y + .5f, q.z, .3f, .24f, .24f);
+            }
         }
-        wedge(b, RIN - .02f, ROUT + 1.2f, LOBBY_ANGLE - HALF * 1.3f, LOBBY_ANGLE + HALF * 1.3f, yOf(0), THICK, Color.valueOf("5a6aa8"));
-        add(mb.end());
+        Model model = mb.end();
+        models.add(model);
+        for (int i = 0; i <= Board.ROOF; i++) tiles[i] = new ModelInstance(model, "t" + i);
     }
 
     /** Draws every square's number into one texture, then lays a flat quad on each tile. */
@@ -314,10 +408,11 @@ public final class Tower implements Disposable {
                 new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA),
                 IntAttribute.createCullFace(GL20.GL_NONE));
         mb.begin();
-        mb.node();
-        MeshPartBuilder b = mb.part("labels", GL20.GL_TRIANGLES, PNC | Usage.TextureCoordinates, m);
         Color ink = Color.valueOf("2a2340");
         for (int i = 0; i <= Board.ROOF; i++) {
+            Node node = mb.node();
+            node.id = "l" + i;
+            MeshPartBuilder b = mb.part("l" + i, GL20.GL_TRIANGLES, PNC | Usage.TextureCoordinates, m);
             float a = i == 0 ? LOBBY_ANGLE : ang(i);
             float r = i == 0 ? RMID + 1.6f : RMID + .9f, half = i == 0 ? .85f : .72f;
             Vector3 c = polar(r, a, (i == 0 ? yOf(0) : yOf(i)) + .012f);
@@ -332,15 +427,17 @@ public final class Tower implements Disposable {
             short tl = b.vertex(c.cpy().sub(right).add(up), Vector3.Y, ink, new com.badlogic.gdx.math.Vector2(u0, v1));
             b.rect(bl, br, tr, tl);
         }
-        add(mb.end());
+        Model model = mb.end();
+        models.add(model);
+        for (int i = 0; i <= Board.ROOF; i++) labels[i] = new ModelInstance(model, "l" + i);
     }
 
     private void buildElevators() {
-        Material glass = new Material(ColorAttribute.createDiffuse(Color.valueOf("8fe0d4")),
+        Material glass = new Material("glass", ColorAttribute.createDiffuse(GLASS),
                 new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, .16f),
                 new DepthTestAttribute(GL20.GL_LEQUAL, false));
-        Material brass = new Material(ColorAttribute.createDiffuse(Color.valueOf("e4ab4c")),
-                ColorAttribute.createEmissive(Color.valueOf("3a2606")),
+        Material brass = new Material("brass", ColorAttribute.createDiffuse(BRASS),
+                ColorAttribute.createEmissive(BRASS_GLOW),
                 ColorAttribute.createSpecular(Color.valueOf("ffe2a6")));
 
         // shared car model: floor, roof and four posts
@@ -376,7 +473,7 @@ public final class Tower implements Disposable {
             instances.add(car);
             elevatorAt[e[0]] = new Elevator(bx, bz, y0, yOf(e[1]), deg, car);
         }
-        add(mb.end());
+        shafts = add(mb.end());
     }
 
     private void buildChutes() {
@@ -386,7 +483,6 @@ public final class Tower implements Disposable {
         int ringN = 10;
         float radius = .32f;
         for (int ci = 0; ci < Board.CHUTES.length; ci++) {
-            chuteAt[Board.CHUTES[ci][0]] = ci;
             float laps = (Board.CHUTES[ci][0] - Board.CHUTES[ci][1]) / 10f;
             int segs = Math.max(36, Math.round(laps * 24));
             mb.begin();

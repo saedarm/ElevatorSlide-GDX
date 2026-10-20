@@ -29,13 +29,15 @@ public final class Ui implements Disposable {
     public static final Color CORAL = Color.valueOf("ef6f5e");
     public static final Color TEAL = Color.valueOf("5cc6b8");
     public static final Color DARK = Color.valueOf("2a2340");
-    public static final Color[] PLAYERS = {CORAL, TEAL, BRASS, Color.valueOf("9b7be8")};
+    public static final Color PURPLE = Color.valueOf("9b7be8");
+    public static final Color[] PLAYERS = {CORAL, TEAL, BRASS, PURPLE};
 
     private static final String CHARS = FreeTypeFontGenerator.DEFAULT_CHARS + "…·—–’";
 
     public final float scale;
-    public final BitmapFont title, heading, chip, dieFont, number, body, small, label3d;
+    public final BitmapFont logo, title, heading, chip, dieFont, number, body, small, label3d;
     public final Drawable panel, panelActive, card, button, buttonDown, brass, brassDown, dieFace, field, cursor, selection, dot;
+    public final Drawable tierNormal, tierChaos, tierInsane, tierEvent, white, ring, scanlines, sliderBg, sliderFill, knob;
 
     private final Array<Texture> textures = new Array<>();
     private final Array<BitmapFont> fonts = new Array<>();
@@ -44,6 +46,7 @@ public final class Ui implements Disposable {
         scale = Math.max(1f, Gdx.graphics.getDensity());
         FreeTypeFontGenerator display = new FreeTypeFontGenerator(Gdx.files.internal("fonts/Bungee-Regular.ttf"));
         FreeTypeFontGenerator text = new FreeTypeFontGenerator(Gdx.files.internal("fonts/BricolageGrotesque.ttf"));
+        logo = font(display, 40, false);
         title = font(display, 27, false);
         heading = font(display, 16, false);
         chip = font(display, 12, false);
@@ -78,6 +81,94 @@ public final class Ui implements Disposable {
         TextureRegionDrawable circle = new TextureRegionDrawable(new TextureRegion(texture(circlePixmap(Math.round(24 * scale)))));
         circle.setMinSize(14, 14);
         dot = circle;
+        tierNormal = box(Color.valueOf("262b58"), TEAL, 10, 2);
+        tierChaos = box(Color.valueOf("2e2550"), CORAL, 10, 2);
+        tierInsane = box(Color.valueOf("2a2358"), PURPLE, 10, 2);
+        tierEvent = box(Color.valueOf("2c2a4e"), BRASS, 12, 2.5f);
+        white = solid;
+        TextureRegionDrawable r = new TextureRegionDrawable(new TextureRegion(texture(ringPixmap(Math.round(14 * scale)))));
+        r.setMinSize(28, 28);
+        ring = r;
+        Pixmap lines = new Pixmap(2, 4, Pixmap.Format.RGBA8888);
+        lines.setColor(0, 0, 0, 0);
+        lines.fill();
+        lines.setColor(0, 0, 0, .35f);
+        lines.drawLine(0, 2, 1, 2);
+        Texture lt = texture(lines);
+        lt.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
+        scanlines = new com.badlogic.gdx.scenes.scene2d.utils.TiledDrawable(new TextureRegion(lt));
+        sliderBg = box(Color.valueOf("1b1f43"), LINE, 4, 1);
+        sliderBg.setMinHeight(8);
+        sliderFill = box(BRASS, BRASS, 4, 0);
+        sliderFill.setMinHeight(8);
+        TextureRegionDrawable k = new TextureRegionDrawable(new TextureRegion(texture(circlePixmap(Math.round(13 * scale)))));
+        k.setMinSize(26, 26);
+        knob = k.tint(INK);
+    }
+
+    // ---------- shared widget styles ----------
+
+    public com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle brassButton() {
+        com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle s =
+                new com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle(brass, brassDown, null, heading);
+        s.fontColor = DARK;
+        s.disabled = button;
+        s.disabledFontColor = MUTED;
+        return s;
+    }
+
+    public com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle plainButton(BitmapFont font) {
+        com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle s =
+                new com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle(button, buttonDown, null, font);
+        s.fontColor = INK;
+        return s;
+    }
+
+    public com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle toggleButton() {
+        com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle s =
+                new com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle(button, buttonDown, brass, chip);
+        s.fontColor = INK;
+        s.checkedFontColor = DARK;
+        return s;
+    }
+
+    public Drawable tier(Card c) {
+        switch (c.tier) {
+            case CHAOS: return tierChaos;
+            case INSANE: return tierInsane;
+            default: return tierNormal;
+        }
+    }
+
+    public static Color tierColor(Card c) {
+        switch (c.tier) {
+            case CHAOS: return CORAL;
+            case INSANE: return PURPLE;
+            default: return TEAL;
+        }
+    }
+
+    public static String tierName(Card c) {
+        switch (c.tier) {
+            case CHAOS: return "CHAOS";
+            case INSANE: return "INSANE";
+            default: return c.use == Card.Use.PASSIVE ? "AUTOMATIC" : "HANDY";
+        }
+    }
+
+    /** Three-quarter ring for the "no signal" spinner. */
+    private static Pixmap ringPixmap(int r) {
+        int s = r * 2 + 2;
+        Pixmap pm = new Pixmap(s, s, Pixmap.Format.RGBA8888);
+        pm.setColor(0, 0, 0, 0);
+        pm.fill();
+        pm.setColor(Color.WHITE);
+        float inner = r * .62f;
+        for (int y = 0; y < s; y++) for (int x = 0; x < s; x++) {
+            float dx = x - r - .5f, dy = y - r - .5f, d = (float) Math.sqrt(dx * dx + dy * dy);
+            if (d <= r && d >= inner && !(dx > 0 && dy < 0)) pm.drawPixel(x, y);
+        }
+        return pm;
     }
 
     private BitmapFont font(FreeTypeFontGenerator g, float dp, boolean markup) {
